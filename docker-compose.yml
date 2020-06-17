@@ -1,0 +1,78 @@
+version: '3.7'
+
+services:
+  gateway:
+    image: traefik:v2.2
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.exposedByDefault=false
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  es01:
+    image: "docker.elastic.co/elasticsearch/elasticsearch-oss:7.7.1"
+    environment:
+      node.name: es01
+      discovery.seed_hosts: es02
+      cluster.initial_master_nodes: es01,es02
+      cluster.name: traefik-tutorial-cluster
+      bootstrap.memory_lock: "true"
+      ES_JAVA_OPTS: -Xms256m -Xmx256m
+    volumes:
+      - "es-data-es01:/usr/share/elasticsearch/data"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.elasticsearch.entrypoints=http"
+      - "traefik.http.routers.elasticsearch.rule=Host(`localhost`) && PathPrefix(`/es`) || Host(`elasticsearch`)"
+      - "traefik.http.routers.elasticsearch.middlewares=es-stripprefix"
+      - "traefik.http.middlewares.es-stripprefix.stripprefix.prefixes=/es"
+      - "traefik.http.services.elasticsearch.loadbalancer.server.port=9200"
+
+  es02:
+    image: "docker.elastic.co/elasticsearch/elasticsearch-oss:7.7.1"
+    environment:
+      node.name: es02
+      discovery.seed_hosts: es01
+      cluster.initial_master_nodes: es01,es02
+      cluster.name: traefik-tutorial-cluster
+      bootstrap.memory_lock: "true"
+      ES_JAVA_OPTS: -Xms256m -Xmx256m
+    volumes:
+      - "es-data-es02:/usr/share/elasticsearch/data"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.elasticsearch.entrypoints=http"
+      - "traefik.http.routers.elasticsearch.rule=Host(`localhost`) && PathPrefix(`/es`) || Host(`elasticsearch`)"
+      - "traefik.http.routers.elasticsearch.middlewares=es-stripprefix"
+      - "traefik.http.middlewares.es-stripprefix.stripprefix.prefixes=/es"
+      - "traefik.http.services.elasticsearch.loadbalancer.server.port=9200"
+
+  cerebro:
+    image: lmenezes/cerebro:0.8.5
+    volumes:
+      - "./conf/cerebro/application.conf:/opt/cerebro/conf/application.conf"
+    depends_on:
+      - gateway
+    links:
+      - "gateway:elasticsearch"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.admin.entrypoints=http"
+      - "traefik.http.routers.admin.rule=Host(`localhost`) && PathPrefix(`/admin`)"
+      - "traefik.http.services.cerebro.loadbalancer.server.port=9000"
+
+volumes:
+  es-data-es01:
+  es-data-es02:
